@@ -579,6 +579,18 @@ def normalise_text(text: str) -> str:
     return " ".join(text.casefold().strip().split())
 
 
+def _is_missing_or_generic_explanation(text: Any) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return True
+    return normalise_text(text).rstrip(".!?") in {
+        "this is important",
+        "this matters",
+        "this is worth focusing on",
+        "the movement was observed",
+        "there was an issue",
+    }
+
+
 def _validate_feedback(data: Any, payload: dict) -> tuple[dict | None, dict]:
     if not isinstance(data, dict):
         return None, _quality_result(
@@ -683,12 +695,12 @@ def _validate_feedback(data: Any, payload: dict) -> tuple[dict | None, dict]:
         seen.add(theme_id)
         what = item.get("what_was_observed")
         why = item.get("why_focus_on_this")
-        if not isinstance(what, str) or len(what.strip().split()) < 8:
+        if _is_missing_or_generic_explanation(what):
             codes.append("missing_specific_explanation")
             details.append(
                 f"Cue '{title}' does not describe the observed movement in plain language."
             )
-        if not isinstance(why, str) or len(why.strip().split()) < 8:
+        if _is_missing_or_generic_explanation(why):
             codes.append("missing_why_focus")
             details.append(
                 f"Cue '{title}' does not explain why the movement is worth focusing on."
@@ -721,25 +733,10 @@ def _merge_llm_prose_with_brief(
         limitations.append(
             "This is a 2D video-based estimate and not a competition judging decision."
         )
-    deadlift_inconclusive = str(brief.get("overall_summary", "")).startswith(
-        "One or more covered deadlift checks were inconclusive."
-    )
-    if deadlift_inconclusive and "no issue" in normalise_text(overall):
-        overall = brief["overall_summary"]
-    bench_brief = (
-        any(
-            str(theme.get("theme_id", "")).startswith("BP-")
-            for theme in brief.get("priority_themes", [])
-            if isinstance(theme, dict)
-        )
-        or "bench" in str(brief.get("overall_summary", "")).casefold()
-    )
-    if bench_brief:
-        # The model may improve explanatory language, but the deterministic
-        # summary and observed classification wording are immutable.
-        overall = brief["overall_summary"]
-    if not brief.get("priority_themes"):
-        overall = brief["overall_summary"]
+    # A short free-form summary cannot be reliably matched to an individual
+    # theme. Keep the deterministic summary so accepted prose cannot add a
+    # movement finding that was not supplied by the analysis.
+    overall = brief["overall_summary"]
     return {
         "overall_assessment": overall,
         "priority_cues": [
@@ -810,13 +807,12 @@ def build_revision_prompt(
         "- positive_observations and neutral_context are not coaching themes: do not turn them into cue_explanations. If the allowed theme_id list is empty, return cue_explanations as [].\n"
         "- Explain the movement in plain language that a lifter can recognise.\n"
         "- Explain why the movement is worth focusing on.\n"
+        "- The overall_assessment may only paraphrase the supplied overall_summary; do not add another movement finding.\n"
         "- Do not use vague wording such as “monitor”, “be aware”, “maintain”, “ensure”, or “focus on your form”.\n"
         "- Do not introduce any diagnosis, fatigue claim, weakness claim, injury claim, safety claim, or unsupported technique fault.\n"
         "- Do not mention internal rule labels, source IDs, or raw technical identifiers.\n"
         "- Do not generate a next-rep cue; it is provided separately by the application.\n"
-        "- Return only valid JSON matching the required schema.\n\n"
-        "Too vague:\n“Monitor torso lean during the movement.”\n\n"
-        "Useful:\n“As you stood up, your hips moved first and your chest lagged behind. This made the first part of the ascent less coordinated.”"
+        "- Return only valid JSON matching the required schema."
     )
 
 
