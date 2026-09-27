@@ -1,0 +1,5 @@
+opencv-contrib-python==4.11.0.86
+mediapipe==0.10.21
+numpy>=1.24,<2
+gradio>=4.0
+llama-cpp-python>=0.3.2
