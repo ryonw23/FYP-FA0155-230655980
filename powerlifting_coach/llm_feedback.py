@@ -624,7 +624,7 @@ def _validate_feedback(data: Any, payload: dict) -> tuple[dict | None, dict]:
         )
     else:
         bad = _classify_bad_phrase(overall)
-        if bad:
+        if bad and bad[0] != "vague_wording":
             codes.append(bad[0])
             details.append(f"Overall assessment {bad[1]}")
         elif not themes and normalise_text(overall) != normalise_text(
